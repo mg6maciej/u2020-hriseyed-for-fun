@@ -43,6 +43,8 @@ dependencies {
   compile 'com.netflix.rxjava:rxjava-android:0.16.1'
 
   compile 'com.etsy.android.grid:library:1.0.3'
+
+  provided 'pl.mg6.hrisey:hrisey:0.3.0'
 }
 
 def gitSha = 'git rev-parse --short HEAD'.execute([], project.rootDir).text.trim()

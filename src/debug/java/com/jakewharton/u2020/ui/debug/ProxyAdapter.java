@@ -5,7 +5,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
-import com.jakewharton.u2020.data.prefs.StringPreference;
+import com.jakewharton.u2020.data.prefs.DebugU2020Prefs;
 import com.jakewharton.u2020.ui.misc.BindableAdapter;
 
 import static butterknife.ButterKnife.findById;
@@ -14,18 +14,18 @@ class ProxyAdapter extends BindableAdapter<String> {
   public static final int NONE = 0;
   public static final int PROXY = 1;
 
-  private final StringPreference proxy;
+  private final DebugU2020Prefs prefs;
 
-  ProxyAdapter(Context context, StringPreference proxy) {
+  ProxyAdapter(Context context, DebugU2020Prefs prefs) {
     super(context);
-    if (proxy == null) {
-      throw new IllegalStateException("proxy == null");
+    if (prefs == null) {
+      throw new IllegalStateException("prefs == null");
     }
-    this.proxy = proxy;
+    this.prefs = prefs;
   }
 
   @Override public int getCount() {
-    return 2 /* "None" and "Set" */ + (proxy.isSet() ? 1 : 0);
+    return 2 /* "None" and "Set" */ + (prefs.containsNetworkProxy() ? 1 : 0);
   }
 
   @Override public String getItem(int position) {
@@ -35,7 +35,7 @@ class ProxyAdapter extends BindableAdapter<String> {
     if (position == getCount() - 1) {
       return "Set…";
     }
-    return proxy.get();
+    return prefs.getNetworkProxy();
   }
 
   @Override public long getItemId(int position) {

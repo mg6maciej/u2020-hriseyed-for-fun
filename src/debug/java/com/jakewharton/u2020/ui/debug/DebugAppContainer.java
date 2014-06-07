@@ -29,19 +29,8 @@ import com.jakewharton.scalpel.ScalpelFrameLayout;
 import com.jakewharton.u2020.BuildConfig;
 import com.jakewharton.u2020.R;
 import com.jakewharton.u2020.U2020App;
-import com.jakewharton.u2020.data.AnimationSpeed;
-import com.jakewharton.u2020.data.ApiEndpoint;
 import com.jakewharton.u2020.data.ApiEndpoints;
-import com.jakewharton.u2020.data.NetworkProxy;
-import com.jakewharton.u2020.data.PicassoDebugging;
-import com.jakewharton.u2020.data.PixelGridEnabled;
-import com.jakewharton.u2020.data.PixelRatioEnabled;
-import com.jakewharton.u2020.data.ScalpelEnabled;
-import com.jakewharton.u2020.data.ScalpelWireframeEnabled;
-import com.jakewharton.u2020.data.SeenDebugDrawer;
-import com.jakewharton.u2020.data.prefs.BooleanPreference;
-import com.jakewharton.u2020.data.prefs.IntPreference;
-import com.jakewharton.u2020.data.prefs.StringPreference;
+import com.jakewharton.u2020.data.prefs.DebugU2020Prefs;
 import com.jakewharton.u2020.ui.AppContainer;
 import com.jakewharton.u2020.ui.MainActivity;
 import com.jakewharton.u2020.util.Strings;
@@ -83,45 +72,21 @@ public class DebugAppContainer implements AppContainer {
 
   private final OkHttpClient client;
   private final Picasso picasso;
-  private final StringPreference networkEndpoint;
-  private final StringPreference networkProxy;
-  private final IntPreference animationSpeed;
-  private final BooleanPreference picassoDebugging;
-  private final BooleanPreference pixelGridEnabled;
-  private final BooleanPreference pixelRatioEnabled;
-  private final BooleanPreference scalpelEnabled;
-  private final BooleanPreference scalpelWireframeEnabled;
-  private final BooleanPreference seenDebugDrawer;
   private final RestAdapter restAdapter;
   private final MockRestAdapter mockRestAdapter;
+  private final DebugU2020Prefs prefs;
 
   U2020App app;
   Activity activity;
   Context drawerContext;
 
-  @Inject public DebugAppContainer(OkHttpClient client, Picasso picasso,
-      @ApiEndpoint StringPreference networkEndpoint, @NetworkProxy StringPreference networkProxy,
-      @AnimationSpeed IntPreference animationSpeed,
-      @PicassoDebugging BooleanPreference picassoDebugging,
-      @PixelGridEnabled BooleanPreference pixelGridEnabled,
-      @PixelRatioEnabled BooleanPreference pixelRatioEnabled,
-      @ScalpelEnabled BooleanPreference scalpelEnabled,
-      @ScalpelWireframeEnabled BooleanPreference scalpelWireframeEnabled,
-      @SeenDebugDrawer BooleanPreference seenDebugDrawer, RestAdapter restAdapter,
-      MockRestAdapter mockRestAdapter) {
+  @Inject public DebugAppContainer(OkHttpClient client, Picasso picasso, RestAdapter restAdapter,
+      MockRestAdapter mockRestAdapter, DebugU2020Prefs prefs) {
     this.client = client;
     this.picasso = picasso;
-    this.networkEndpoint = networkEndpoint;
-    this.scalpelEnabled = scalpelEnabled;
-    this.scalpelWireframeEnabled = scalpelWireframeEnabled;
-    this.seenDebugDrawer = seenDebugDrawer;
     this.mockRestAdapter = mockRestAdapter;
-    this.networkProxy = networkProxy;
-    this.animationSpeed = animationSpeed;
-    this.picassoDebugging = picassoDebugging;
-    this.pixelGridEnabled = pixelGridEnabled;
-    this.pixelRatioEnabled = pixelRatioEnabled;
     this.restAdapter = restAdapter;
+    this.prefs = prefs;
   }
 
   @InjectView(R.id.debug_drawer_layout) DrawerLayout drawerLayout;
@@ -197,14 +162,14 @@ public class DebugAppContainer implements AppContainer {
     });
 
     // If you have not seen the debug drawer before, show it with a message
-    if (!seenDebugDrawer.get()) {
+    if (!prefs.getSeenDebugDrawer()) {
       drawerLayout.postDelayed(new Runnable() {
         @Override public void run() {
           drawerLayout.openDrawer(Gravity.END);
           Toast.makeText(activity, R.string.debug_drawer_welcome, Toast.LENGTH_LONG).show();
         }
       }, 1000);
-      seenDebugDrawer.set(true);
+      prefs.setSeenDebugDrawer(true);
     }
 
     setupNetworkSection();
@@ -217,7 +182,7 @@ public class DebugAppContainer implements AppContainer {
   }
 
   private void setupNetworkSection() {
-    final ApiEndpoints currentEndpoint = ApiEndpoints.from(networkEndpoint.get());
+    final ApiEndpoints currentEndpoint = ApiEndpoints.from(prefs.getApiEndpoint());
     final EnumAdapter<ApiEndpoints> endpointAdapter =
         new EnumAdapter<>(drawerContext, ApiEndpoints.class);
     endpointView.setAdapter(endpointAdapter);
@@ -302,8 +267,8 @@ public class DebugAppContainer implements AppContainer {
       }
     });
 
-    int currentProxyPosition = networkProxy.isSet() ? ProxyAdapter.PROXY : ProxyAdapter.NONE;
-    final ProxyAdapter proxyAdapter = new ProxyAdapter(activity, networkProxy);
+    int currentProxyPosition = prefs.containsNetworkProxy() ? ProxyAdapter.PROXY : ProxyAdapter.NONE;
+    final ProxyAdapter proxyAdapter = new ProxyAdapter(activity, prefs);
     networkProxyView.setAdapter(proxyAdapter);
     networkProxyView.setSelection(currentProxyPosition);
     networkProxyView.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
@@ -311,10 +276,10 @@ public class DebugAppContainer implements AppContainer {
       public void onItemSelected(AdapterView<?> adapterView, View view, int position, long id) {
         if (position == ProxyAdapter.NONE) {
           Timber.d("Clearing network proxy");
-          networkProxy.delete();
+          prefs.removeNetworkProxy();
           client.setProxy(null);
-        } else if (networkProxy.isSet() && position == ProxyAdapter.PROXY) {
-          Timber.d("Ignoring re-selection of network proxy %s", networkProxy.get());
+        } else if (prefs.containsNetworkProxy() && position == ProxyAdapter.PROXY) {
+          Timber.d("Ignoring re-selection of network proxy %s", prefs.getNetworkProxy());
         } else {
           Timber.d("New network proxy selected. Prompting for host.");
           showNewNetworkProxyDialog(proxyAdapter);
@@ -363,22 +328,22 @@ public class DebugAppContainer implements AppContainer {
   @OnClick(R.id.debug_network_endpoint_edit) void onEditEndpointClicked() {
     Timber.d("Prompting to edit custom endpoint URL.");
     // Pass in the currently selected position since we are merely editing.
-    showCustomEndpointDialog(endpointView.getSelectedItemPosition(), networkEndpoint.get());
+    showCustomEndpointDialog(endpointView.getSelectedItemPosition(), prefs.getApiEndpoint());
   }
 
   private void setupUserInterfaceSection() {
     final AnimationSpeedAdapter speedAdapter = new AnimationSpeedAdapter(activity);
     uiAnimationSpeedView.setAdapter(speedAdapter);
-    final int animationSpeedValue = animationSpeed.get();
+    final int animationSpeedValue = prefs.getAnimationSpeed();
     uiAnimationSpeedView.setSelection(
         AnimationSpeedAdapter.getPositionForValue(animationSpeedValue));
     uiAnimationSpeedView.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
       @Override
       public void onItemSelected(AdapterView<?> adapterView, View view, int position, long id) {
         int selected = speedAdapter.getItem(position);
-        if (selected != animationSpeed.get()) {
+        if (selected != prefs.getAnimationSpeed()) {
           Timber.d("Setting animation speed to %sx", selected);
-          animationSpeed.set(selected);
+          prefs.setAnimationSpeed(selected);
           applyAnimationSpeed(selected);
         } else {
           Timber.d("Ignoring re-selection of animation speed %sx", selected);
@@ -395,50 +360,50 @@ public class DebugAppContainer implements AppContainer {
       }
     });
 
-    boolean gridEnabled = pixelGridEnabled.get();
+    boolean gridEnabled = prefs.getPixelGridEnabled();
     madgeFrameLayout.setOverlayEnabled(gridEnabled);
     uiPixelGridView.setChecked(gridEnabled);
     uiPixelRatioView.setEnabled(gridEnabled);
     uiPixelGridView.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
       @Override public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
         Timber.d("Setting pixel grid overlay enabled to " + isChecked);
-        pixelGridEnabled.set(isChecked);
+        prefs.setPixelGridEnabled(isChecked);
         madgeFrameLayout.setOverlayEnabled(isChecked);
         uiPixelRatioView.setEnabled(isChecked);
       }
     });
 
-    boolean ratioEnabled = pixelRatioEnabled.get();
+    boolean ratioEnabled = prefs.getPixelRatioEnabled();
     madgeFrameLayout.setOverlayRatioEnabled(ratioEnabled);
     uiPixelRatioView.setChecked(ratioEnabled);
     uiPixelRatioView.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
       @Override public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
         Timber.d("Setting pixel scale overlay enabled to " + isChecked);
-        pixelRatioEnabled.set(isChecked);
+        prefs.setPixelRatioEnabled(isChecked);
         madgeFrameLayout.setOverlayRatioEnabled(isChecked);
       }
     });
 
-    boolean scalpel = scalpelEnabled.get();
+    boolean scalpel = prefs.getScalpelEnabled();
     scalpelFrameLayout.setLayerInteractionEnabled(scalpel);
     uiScalpelView.setChecked(scalpel);
     uiScalpelWireframeView.setEnabled(scalpel);
     uiScalpelView.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
       @Override public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
         Timber.d("Setting scalpel interaction enabled to " + isChecked);
-        scalpelEnabled.set(isChecked);
+        prefs.setScalpelEnabled(isChecked);
         scalpelFrameLayout.setLayerInteractionEnabled(isChecked);
         uiScalpelWireframeView.setEnabled(isChecked);
       }
     });
 
-    boolean wireframe = scalpelWireframeEnabled.get();
+    boolean wireframe = prefs.getScalpelWireframeEnabled();
     scalpelFrameLayout.setDrawViews(!wireframe);
     uiScalpelWireframeView.setChecked(wireframe);
     uiScalpelWireframeView.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
       @Override public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
         Timber.d("Setting scalpel wireframe enabled to " + isChecked);
-        scalpelWireframeEnabled.set(isChecked);
+        prefs.setScalpelWireframeEnabled(isChecked);
         scalpelFrameLayout.setDrawViews(!isChecked);
       }
     });
@@ -472,14 +437,14 @@ public class DebugAppContainer implements AppContainer {
   }
 
   private void setupPicassoSection() {
-    boolean picassoDebuggingValue = picassoDebugging.get();
+    boolean picassoDebuggingValue = prefs.getPicassoDebugging();
     picasso.setDebugging(picassoDebuggingValue);
     picassoIndicatorView.setChecked(picassoDebuggingValue);
     picassoIndicatorView.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
       @Override public void onCheckedChanged(CompoundButton button, boolean isChecked) {
         Timber.d("Setting Picasso debugging to " + isChecked);
         picasso.setDebugging(isChecked);
-        picassoDebugging.set(isChecked);
+        prefs.setPicassoDebugging(isChecked);
       }
     });
 
@@ -543,7 +508,7 @@ public class DebugAppContainer implements AppContainer {
   }
 
   private void showNewNetworkProxyDialog(final ProxyAdapter proxyAdapter) {
-    final int originalSelection = networkProxy.isSet() ? ProxyAdapter.PROXY : ProxyAdapter.NONE;
+    final int originalSelection = prefs.containsNetworkProxy() ? ProxyAdapter.PROXY : ProxyAdapter.NONE;
 
     View view = LayoutInflater.from(app).inflate(R.layout.debug_drawer_network_proxy, null);
     final EditText host = findById(view, R.id.debug_drawer_network_proxy_host);
@@ -565,7 +530,7 @@ public class DebugAppContainer implements AppContainer {
               SocketAddress address =
                   InetSocketAddress.createUnresolved(parts[0], Integer.parseInt(parts[1]));
 
-              networkProxy.set(theHost); // Persist across restarts.
+              prefs.setNetworkProxy(theHost); // Persist across restarts.
               proxyAdapter.notifyDataSetChanged(); // Tell the spinner to update.
               networkProxyView.setSelection(ProxyAdapter.PROXY); // And show the proxy.
 
@@ -618,7 +583,7 @@ public class DebugAppContainer implements AppContainer {
 
   private void setEndpointAndRelaunch(String endpoint) {
     Timber.d("Setting network endpoint to %s", endpoint);
-    networkEndpoint.set(endpoint);
+    prefs.setApiEndpoint(endpoint);
 
     Intent newApp = new Intent(app, MainActivity.class);
     newApp.setFlags(FLAG_ACTIVITY_CLEAR_TASK | FLAG_ACTIVITY_NEW_TASK);

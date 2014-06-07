@@ -1,9 +1,8 @@
 package com.jakewharton.u2020.data.api;
 
 import android.content.SharedPreferences;
-import com.jakewharton.u2020.data.ApiEndpoint;
 import com.jakewharton.u2020.data.IsMockMode;
-import com.jakewharton.u2020.data.prefs.StringPreference;
+import com.jakewharton.u2020.data.prefs.DebugU2020Prefs;
 import dagger.Module;
 import dagger.Provides;
 import javax.inject.Singleton;
@@ -21,8 +20,8 @@ import retrofit.android.AndroidMockValuePersistence;
 public final class DebugApiModule {
 
   @Provides @Singleton
-  Endpoint provideEndpoint(@ApiEndpoint StringPreference apiEndpoint) {
-    return Endpoints.newFixedEndpoint(apiEndpoint.get());
+  Endpoint provideEndpoint(DebugU2020Prefs prefs) {
+    return Endpoints.newFixedEndpoint(prefs.getApiEndpoint());
   }
 
   @Provides @Singleton
